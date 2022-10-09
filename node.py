@@ -4,7 +4,6 @@ import json
 import sys
 import time
 import hashlib
-from file_transfer import FileDownloader, fileServer, FileManager
 import portforwardlib
 import ipaddress
 import random
@@ -119,8 +118,6 @@ class Node(threading.Thread):
 
         self.terminate_flag = threading.Event()
         self.pinger = Pinger(self)  # start pinger
-        self.file_manager = FileManager()
-        self.fileServer = fileServer(self, file_port)
         self.debug = True
 
         self.dead_time = (
@@ -245,7 +242,6 @@ class Node(threading.Thread):
 
     def run(self):
         self.pinger.start()
-        self.fileServer.start()
         while (
             not self.terminate_flag.is_set()
         ):  # Check whether the thread needs to be closed
@@ -280,7 +276,6 @@ class Node(threading.Thread):
             time.sleep(0.01)
 
         self.pinger.stop()
-        self.fileServer.stop()
         for t in self.nodes_connected:
             t.stop()
 
@@ -353,15 +348,6 @@ class Node(threading.Thread):
                 if time.time() - self.msgs[i] > msg_del_time:
                     del self.msgs[i]
 
-    def encryption_handler(self, dta):
-        if dta["rnid"] == self.id:
-            dta["data"] = dta["data"]
-            return dta
-        elif dta["rnid"] is None:
-            return dta
-        else:
-            return False
-
     def data_handler(self, dta, n):
         if not self.check_validity(dta):
             return False
@@ -370,10 +356,6 @@ class Node(threading.Thread):
             return False
         else:
             self.announce(dta, n)
-
-        dta = self.encryption_handler(dta)
-        if not dta:
-            return False
 
         type = dta["type"]
         data = dta["data"]
@@ -391,36 +373,6 @@ class Node(threading.Thread):
         if type == "msg":
             self.on_message(data, dta["snid"], bool(dta["rnid"]))
 
-        if type == "req":
-            if self.file_manager.have_file(data):
-                self.message(
-                    "resp",
-                    data,
-                    {"ip": self.ip, "localip": self.local_ip},
-                )
-                self.debug_print(
-                    "recieved request for file: " + data + " and we have it."
-                )
-            else:
-                self.debug_print(
-                    "recieved request for file: " + data + " but we do not have it."
-                )
-
-        if type == "resp":
-            self.debug_print("node: " + dta["snid"] + " has file " + data)
-            if data in self.requested:
-                print("node " + dta["snid"] + " has our file!")
-                if dta["ip"] == "":
-                    if dta["localip"] != "":
-                        ip = dta["localip"]
-                else:
-                    ip = dta["ip"]
-
-                downloader = FileDownloader(
-                    ip, FILE_PORT, str(data), self.fileServer.dirname, self.file_manager
-                )
-                downloader.start()
-
     def check_ip_to_connect(self, ip):
         if (
             ip not in self.peers
@@ -434,7 +386,7 @@ class Node(threading.Thread):
             return False
 
     def on_message(self, data, sender, private):
-        self.debug_print("Incomig Message: " + data)
+        self.debug_print("Incoming Message: " + data)
 
     def loadstate(self, file="state.json"):
         with open(file, "r") as f:
@@ -446,28 +398,14 @@ class Node(threading.Thread):
         with open(file, "w+") as f:
             json.dump(self.peers, f)
 
-    def requestFile(self, fhash):
-        if fhash not in self.requested and fhash not in self.file_manager.getallfiles():
-            self.requested.append(fhash)
-            self.message("req", fhash)
-
-    def addfile(self, path):
-        s = self.file_manager.addfile(path)
-        self.file_manager.refresh()
-        return s
-
-    def setfiledir(self, path):
-        self.fileServer.dirname = path
-        self.file_manager.download_path = path
-
     def node_connected(self, node):
-        self.debug_print("current node" + self.id + "node_connected: " + node.id)
+        self.debug_print("current node: " + self.id + ", " + "node_connected: " + node.id)
         if node.host not in self.peers:
             self.peers.append(node.host)
         self.send_peers()
 
     def node_disconnected(self, node):
-        self.debug_print("current node" + self.id + "node_disconnected: " + node.id)
+        self.debug_print("current node: " + self.id + ", " +"node_disconnected: " + node.id)
         if node.host in self.peers:
             self.peers.remove(node.host)
 

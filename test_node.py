@@ -2,9 +2,6 @@ from node import Node
 import pytest
 import time
 
-fhash = ""
-
-
 node0 = Node("", 65434, 65436)
 node1 = Node("", 65435, 65437)
 
@@ -27,19 +24,6 @@ def test_node_message():
 
 def test_node_private_message():
     node0.send_message("TEST MESSAGE", reciever=node1.id)
-
-
-def test_files_add():
-    global fhash
-    fhash = node1.addfile("LICENSE")
-
-
-def test_file_request():
-    node0.requestFile(fhash)
-    print(node0.file_manager.getallfiles())
-    assert len(node0.requested) == 1
-    assert len(node1.msgs.keys()) == 2
-
 
 node0.stop()
 node1.stop()
